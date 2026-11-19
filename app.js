@@ -1,4 +1,4 @@
-// Dr. Pool inbox board - standalone public page (GitHub Pages). No login.
+/ Dr. Pool inbox board - standalone public page (GitHub Pages). No login.
 // Reads the board through the Supabase function get_inbox_board() and checks items off
 // through inbox_board_toggle(); both only expose / change board fields.
 // The hourly scheduled task fills the board from the info@drpool.us inbox.
@@ -20,7 +20,7 @@
   ];
 
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
-  var myName = "", items = [], meta = null;
+  var myName = "", items = [], meta = null, people = ["Office","Daniel","David","Juliana","Malu","Aldo","Geffet"];
   try { myName = localStorage.getItem("drpool-board-name") || ""; } catch (e) {}
 
   function $(id) { return document.getElementById(id); }
@@ -51,6 +51,7 @@
     sb.rpc("get_inbox_board").then(function (r) {
       if (r.error) { $("sweep").textContent = "Could not load the board. Retrying..."; return; }
       var b = r.data || {}; items = Array.isArray(b.items) ? b.items : []; meta = b.meta || null;
+      if (Array.isArray(b.people) && b.people.length) people = b.people;
       render();
     }).finally(function () { loading = false; });
   }
@@ -72,6 +73,40 @@
     });
   }
 
+
+  /* ---------- assign to (sends it to that person's CRM inbox) ---------- */
+  var dlg = null, dlgItem = null;
+  function openAssign(it) {
+    dlgItem = it;
+    if (!dlg) {
+      dlg = document.createElement("dialog"); dlg.className = "assign";
+      dlg.innerHTML = '<form method="dialog"><h3>Assign to</h3><p class="assign-what"></p>' +
+        '<div class="people"></div><label>Note (optional)<textarea maxlength="500" rows="3" placeholder="e.g. please call her back today"></textarea></label>' +
+        '<div class="assign-actions"><button class="btn" value="cancel" type="submit">Cancel</button></div></form>';
+      document.body.appendChild(dlg);
+    }
+    dlg.querySelector(".assign-what").textContent = it.title + (it.assigned_to ? " (now: " + it.assigned_to + ")" : "");
+    dlg.querySelector("textarea").value = "";
+    var box = dlg.querySelector(".people"); box.textContent = "";
+    people.forEach(function (p) {
+      var b = el("button", "btn person" + (p === it.assigned_to ? " current" : ""), p); b.type = "button";
+      b.addEventListener("click", function () { doAssign(p); });
+      box.appendChild(b);
+    });
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute("open", "");
+  }
+  function doAssign(to) {
+    var it = dlgItem; if (!it) return;
+    var by = myName || askName(); if (!by) return;
+    var note = dlg.querySelector("textarea").value.trim();
+    dlg.close ? dlg.close() : dlg.removeAttribute("open");
+    var prev = it.assigned_to; it.assigned_to = to; render();
+    sb.rpc("inbox_board_assign", { p_id: it.id, p_to: to, p_by: by, p_note: note || null }).then(function (r) {
+      if (r.error) { it.assigned_to = prev; render(); toast("Could not assign. Try again."); return; }
+      toast("Sent to " + to + "'s CRM inbox"); load();
+    });
+  }
+
   /* ---------- render ---------- */
   function row(it, accent) {
     var fresh = isFresh(it);
@@ -89,7 +124,6 @@
     if (fresh) m.appendChild(el("span", "newtag", "NEW"));
     m.appendChild(el("span", null, fmtTime(it.at)));
     if (Array.isArray(it.tags) && it.tags.length) m.appendChild(el("span", null, "Tagged: " + it.tags.join(", ")));
-    if (it.assigned_to) m.appendChild(el("span", null, "Assigned: " + it.assigned_to));
     var age = ageDays(it.at);
     if (!it.done && age >= 1) m.appendChild(el("span", "old" + (age >= 3 ? " stale" : ""), age === 1 ? "from yesterday" : "still open: " + age + " days"));
     if (it.done) m.appendChild(el("span", null, "done " + (it.done_by ? "by " + it.done_by + " " : "") + fmtTime(it.done_at)));
@@ -97,9 +131,11 @@
     var side = el("div", "side");
     if (it.amount != null) side.appendChild(el("div", "amt", money(it.amount)));
     if (link) { var o = el("a", "grab open", "Open email"); o.href = link; o.target = "_blank"; o.rel = "noopener noreferrer"; side.appendChild(o); }
-    var g = el("button", "grab", "Copy reminder"); g.type = "button";
-    g.addEventListener("click", function () { copy(plain(it), "Reminder copied"); });
-    side.appendChild(g);
+    if (!it.done) {
+      var g = el("button", "grab assign-btn" + (it.assigned_to ? " assigned" : ""), it.assigned_to ? "Assigned: " + it.assigned_to : "Assign to"); g.type = "button";
+      g.addEventListener("click", function () { openAssign(it); });
+      side.appendChild(g);
+    }
     li.appendChild(cb); li.appendChild(main); li.appendChild(side);
     return li;
   }

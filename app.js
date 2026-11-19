@@ -1,4 +1,4 @@
-/ Dr. Pool inbox board - standalone public page (GitHub Pages). No login.
+// Dr. Pool inbox board - standalone public page (GitHub Pages). No login.
 // Reads the board through the Supabase function get_inbox_board() and checks items off
 // through inbox_board_toggle(); both only expose / change board fields.
 // The hourly scheduled task fills the board from the info@drpool.us inbox.
